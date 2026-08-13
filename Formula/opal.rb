@@ -1,69 +1,59 @@
 class Opal < Formula
-  desc "Pure-Zig desktop media browser + AI copilot (dvui + mpv + apfel)"
+  # Binary formula: installs the prebuilt release binary.
+  #
+  # This used to build from source, which meant `depends_on "zig" => :build` and
+  # `depends_on xcode: ["15.0", :build]` — so `brew install debpalash/tap/opal`
+  # died on any machine that had only the Command Line Tools:
+  #
+  #   opal: A full installation of Xcode.app 15.0 is required to compile
+  #   this software. Installing just the Command Line Tools is not sufficient.
+  #
+  # Nobody should need a 15 GB Xcode download to install a media player. We already
+  # publish a compiled arm64 binary with every release, so install that.
+  desc "Pure-Zig desktop media browser and AI copilot"
   homepage "https://github.com/debpalash/Opal"
-  url "https://github.com/debpalash/Opal.git",
-      tag: "v0.1.0"
+  version "0.6.5"
   license "GPL-3.0-only"
-  head "https://github.com/debpalash/Opal.git", branch: "main"
 
-  # Build-time
-  depends_on "zig" => :build
+  url "https://github.com/debpalash/Opal/releases/download/v0.6.5/opal-0.6.5-macos-arm64.tar.gz"
+  sha256 "11ed5e348f5f86381455a7bf7e23af1b81366ebe457ff1c29f3430690397ece0"
 
-  # Runtime — media + torrent pipeline
-  depends_on "mpv"
-  depends_on "sqlite"
+  # The published binary is Apple-silicon only (GitHub retired the Intel runners).
+  # Say so up front instead of installing something that cannot run.
+  depends_on arch: :arm64
+  depends_on :macos
+
+  # Runtime — this is a bare binary, so it links against Homebrew's dylibs. (The
+  # .app bundle from the same release vendors these instead and needs none of them;
+  # that is what scripts/install.sh installs by default.)
   depends_on "libtorrent-rasterbar"
+  depends_on "mpv"
   depends_on "onnxruntime"
+  depends_on "sqlite"
 
-  # AI copilot (macOS only)
-  depends_on "apfel" => :recommended
-  # NB: apfel lives at https://github.com/debpalash/homebrew-tap once published.
-  # Until then, `brew install opal/tap/apfel` or a manual install is needed.
-
-  # Voice pipeline (all optional; voice mode degrades gracefully if missing)
-  depends_on "ffmpeg" => :recommended       # mic capture via avfoundation
-  depends_on "whisper-cpp" => :recommended  # STT default backend
-  # sherpa-onnx is an optional alternative backend (streaming STT + Kokoro TTS).
-  # Not in core homebrew; install via `brew install k2-fsa/tap/sherpa-onnx`.
-
-  # macOS-only; on Linux, depends_on would include pulseaudio/pipewire
-  on_macos do
-    depends_on xcode: ["15.0", :build]
-  end
+  # Voice pipeline (all optional; voice mode degrades gracefully if missing).
+  depends_on "ffmpeg" => :recommended      # mic capture via avfoundation
+  depends_on "whisper-cpp" => :recommended # STT default backend
 
   def install
-    system ENV["HOMEBREW_PREFIX"].to_s + "/bin/zig", "build",
-           "-Doptimize=ReleaseFast",
-           "--prefix", prefix
-    bin.install "zig-out/bin/opal"
-  end
-
-  def post_install
-    # Fetch whisper tiny model if missing (user can `brew postinstall opal` anytime).
-    model_dir = Pathname.new(Dir.home) / ".config/opal/models"
-    model_path = model_dir / "ggml-tiny.en.bin"
-    unless model_path.exist?
-      model_dir.mkpath
-      system "curl", "-L", "-o", model_path.to_s,
-             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin"
-    end
+    bin.install "opal"
   end
 
   def caveats
     <<~EOS
       Opal stores config + models in ~/.config/opal/.
 
-      To enable AI chat (macOS Apple Intelligence backend), install apfel:
-        brew install debpalash/tap/apfel
+      This formula installs the command-line binary. For the GUI app bundle
+      (self-contained — it vendors mpv/SDL and needs no Homebrew deps):
+        curl -fsSL https://raw.githubusercontent.com/debpalash/Opal/main/scripts/install.sh | sh
 
-      To enable voice/STT, make sure `whisper-cpp` and `ffmpeg` are on PATH
-      (installed by default unless you passed --without-*).
+      To enable voice/STT, keep `whisper-cpp` and `ffmpeg` on PATH.
     EOS
   end
 
   test do
-    # The binary is a GUI app with no --version flag (it would open a window
-    # and never exit), so assert install shape rather than launching it.
+    # A GUI binary with no --version flag (it would open a window and never exit),
+    # so assert install shape rather than launching it.
     assert_predicate bin/"opal", :executable?
   end
 end
